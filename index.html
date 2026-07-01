@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta Ads Dashboard & AI Analyst</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css?v=5.0">
+    <!-- jsPDF & AutoTable CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div class="bg-glow"></div>
+    <div class="app-container">
+        
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <i data-lucide="trending-up"></i>
+                </div>
+                <div>
+                    <h1>Meta Ads Analyst</h1>
+                    <p class="subtitle">Relatórios Automáticos & Inteligência Comercial</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <span id="api-status-badge" class="badge badge-disconnected">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Desconectado</span>
+                </span>
+            </div>
+        </header>
+
+        <!-- Main Layout Grid -->
+        <main class="app-grid">
+            
+            <!-- Sidebar: Configurations -->
+            <aside class="sidebar-config card">
+                <div class="card-header">
+                    <i data-lucide="sliders"></i>
+                    <h2>Configurações de Conexão</h2>
+                </div>
+                <div class="card-body">
+                    <form id="config-form" onsubmit="event.preventDefault();">
+                        <div class="input-group">
+                            <label for="meta-token">Meta Access Token</label>
+                            <div class="input-wrapper">
+                                <i data-lucide="key" class="input-icon"></i>
+                                <input type="password" id="meta-token" placeholder="EAAW..." autocomplete="off">
+                                <button type="button" class="btn-toggle-pass" onclick="togglePasswordVisibility('meta-token')">
+                                    <i data-lucide="eye" id="meta-token-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="ad-account-id">ID da Conta de Anúncios</label>
+                            <div class="input-wrapper">
+                                <i data-lucide="hash" class="input-icon"></i>
+                                <input type="text" id="ad-account-id" placeholder="act_1234567890" autocomplete="off">
+                            </div>
+                            <small class="helper-text">Prefixo 'act_' será adicionado automaticamente se omitido.</small>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="date-preset">Período de Análise</label>
+                            <div class="input-wrapper">
+                                <i data-lucide="calendar" class="input-icon"></i>
+                                <select id="date-preset">
+                                    <option value="today">Hoje</option>
+                                    <option value="yesterday">Ontem</option>
+                                    <option value="this_month" selected>Este Mês</option>
+                                    <option value="last_30d">Últimos 30 Dias</option>
+                                    <option value="last_90d">Últimos 90 Dias</option>
+                                    <option value="maximum">Todo o Período</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="gemini-key">Gemini API Key (Opcional - Para IA)</label>
+                            <div class="input-wrapper">
+                                <i data-lucide="cpu" class="input-icon"></i>
+                                <input type="password" id="gemini-key" placeholder="AIzaSy..." autocomplete="off">
+                                <button type="button" class="btn-toggle-pass" onclick="togglePasswordVisibility('gemini-key')">
+                                    <i data-lucide="eye" id="gemini-key-eye"></i>
+                                </button>
+                            </div>
+                            <small class="helper-text">Habilita análises inteligentes aprofundadas no chat.</small>
+                        </div>
+
+                        <button type="submit" id="btn-fetch" class="btn btn-primary btn-block">
+                            <i data-lucide="refresh-cw" class="icon-spin-hover"></i>
+                            <span>Sincronizar Dados</span>
+                        </button>
+                    </form>
+                </div>
+            </aside>
+
+            <!-- Main Panel: Dashboard metrics & Campaigns Table -->
+            <section class="main-panel">
+                
+                <!-- Summary KPI Cards -->
+                <div class="kpi-grid">
+                    <div class="kpi-card card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Gasto Total</span>
+                            <div class="kpi-icon-wrapper color-spend">
+                                <i data-lucide="dollar-sign"></i>
+                            </div>
+                        </div>
+                        <div class="kpi-value" id="kpi-total-spend">R$ 0,00</div>
+                        <div class="kpi-footer" id="kpi-spend-meta">---</div>
+                    </div>
+
+                    <div class="kpi-card card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Conversões / Compras</span>
+                            <div class="kpi-icon-wrapper color-purchases">
+                                <i data-lucide="shopping-bag"></i>
+                            </div>
+                        </div>
+                        <div class="kpi-value" id="kpi-total-purchases">0</div>
+                        <div class="kpi-footer" id="kpi-purchases-value">Valor: R$ 0,00</div>
+                    </div>
+
+                    <div class="kpi-card card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Leads Gerados</span>
+                            <div class="kpi-icon-wrapper color-leads">
+                                <i data-lucide="users"></i>
+                            </div>
+                        </div>
+                        <div class="kpi-value" id="kpi-total-leads">0</div>
+                        <div class="kpi-footer" id="kpi-leads-cost">Custo Médio: R$ 0,00</div>
+                    </div>
+
+                    <div class="kpi-card card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Conversas WhatsApp</span>
+                            <div class="kpi-icon-wrapper color-whatsapp">
+                                <i data-lucide="message-square"></i>
+                            </div>
+                        </div>
+                        <div class="kpi-value" id="kpi-total-whatsapp">0</div>
+                        <div class="kpi-footer" id="kpi-whatsapp-cost">Custo Médio: R$ 0,00</div>
+                    </div>
+                </div>
+
+                <!-- Campaigns Data Grid Card -->
+                <div class="campaigns-container card">
+                    <div class="table-header-bar">
+                        <div class="table-title-area">
+                            <h2>Campanhas Ativas e Resultados</h2>
+                            <p class="table-subtitle" id="table-campaigns-count">Carregue os dados para ver o relatório</p>
+                        </div>
+                        
+                        <div class="table-actions">
+                            <!-- Toggle switch for Active Only -->
+                            <div class="filter-switch-wrapper">
+                                <span class="filter-label">Apenas Ativas</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="filter-active-only" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+
+                            <!-- PDF Report Type Selector -->
+                            <div class="pdf-export-wrapper" style="display: flex; align-items: center; gap: 8px;">
+                                <span class="filter-label" style="font-size: 0.8rem;">Relatório PDF:</span>
+                                <select id="pdf-report-type" style="background-color: rgba(10, 12, 22, 0.6); border: 1px solid var(--card-border); border-radius: 8px; padding: 6px 12px; color: var(--text-primary); outline: none; font-size: 0.8rem; cursor: pointer; height: 36px; font-family: var(--font-sans);">
+                                    <option value="all" selected>Visão Geral (Completo)</option>
+                                    <option value="sales">Vendas & E-commerce</option>
+                                    <option value="leads">Geração de Leads</option>
+                                    <option value="whatsapp">Contatos & WhatsApp</option>
+                                    <option value="branding">Branding & Tráfego</option>
+                                </select>
+                            </div>
+
+                            <!-- PDF Download Button -->
+                            <button id="btn-pdf" class="btn btn-secondary" disabled>
+                                <i data-lucide="file-text"></i>
+                                <span>Exportar PDF</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Campaigns Table -->
+                    <div class="table-responsive">
+                        <table class="data-table" id="campaigns-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome da Campanha</th>
+                                    <th>Status</th>
+                                    <th>Orçamento</th>
+                                    <th>Resultados da Campanha</th>
+                                    <th>Compras</th>
+                                    <th>ROAS / CPA</th>
+                                </tr>
+                            </thead>
+                            <tbody id="campaigns-table-body">
+                                <tr>
+                                    <td colspan="6" class="table-empty-state">
+                                        <div class="empty-state-content">
+                                            <i data-lucide="database"></i>
+                                            <p>Nenhuma campanha carregada. Conecte sua conta do Meta para começar.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                </div>
+
+                <!-- Creatives Performance Section -->
+                <div class="creatives-section card" style="margin-top: 24px;">
+                    <div class="table-header-bar">
+                        <div class="table-title-area">
+                            <h2>Desempenho de Anúncios e Criativos</h2>
+                            <p class="table-subtitle" id="table-ads-count">Carregue os dados para ver a análise individual de criativos</p>
+                        </div>
+                        
+                        <div class="table-actions flex-wrap" style="gap: 16px;">
+                            <!-- Search Input -->
+                            <div class="search-wrapper">
+                                <i data-lucide="search" class="search-icon"></i>
+                                <input type="text" id="search-ads" placeholder="Buscar anúncio..." oninput="filterAndRenderAds()">
+                            </div>
+
+                            <!-- Sort Dropdown -->
+                            <div class="sort-wrapper" style="display: flex; align-items: center; gap: 8px;">
+                                <span class="filter-label">Ordenar:</span>
+                                <select id="sort-ads" onchange="filterAndRenderAds()" style="background-color: rgba(10, 12, 22, 0.6); border: 1px solid var(--card-border); border-radius: 8px; padding: 6px 12px; color: var(--text-primary); outline: none; font-size: 0.8rem; cursor: pointer;">
+                                    <option value="spend_desc" selected>Gasto (Maior)</option>
+                                    <option value="purchases_desc">Compras (Maior)</option>
+                                    <option value="leads_desc">Leads (Maior)</option>
+                                    <option value="whatsapp_desc">WhatsApp (Maior)</option>
+                                    <option value="roas_desc">ROAS (Maior)</option>
+                                    <option value="clicks_desc">Cliques (Maior)</option>
+                                </select>
+                            </div>
+
+                            <!-- Toggle switch for Active Only -->
+                            <div class="filter-switch-wrapper">
+                                <span class="filter-label">Ativos</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="filter-active-ads" onchange="filterAndRenderAds()">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ads Grid Container -->
+                    <div class="ads-grid" id="ads-grid-container">
+                        <div class="grid-empty-state">
+                            <i data-lucide="image"></i>
+                            <p>Nenhum anúncio carregado. Sincronize seus dados para listar seus criativos.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chatbot / Campaign AI Analyst Panel -->
+                <div class="chatbot-container card">
+                    <div class="chatbot-header">
+                        <div class="chatbot-title-area">
+                            <div class="chatbot-avatar">
+                                <i data-lucide="sparkles"></i>
+                            </div>
+                            <div>
+                                <h3>Analista de Campanhas Inteligente</h3>
+                                <p class="chatbot-status">Pronto para analisar seus dados</p>
+                            </div>
+                        </div>
+                        <div class="chatbot-badge">
+                            <span id="chat-mode-badge">Heurístico Local</span>
+                        </div>
+                    </div>
+
+                    <div class="chatbot-body">
+                        <!-- Chat message thread -->
+                        <div class="chat-thread" id="chat-thread">
+                            <div class="chat-message bot-message">
+                                Olá! Sou o seu analista de marketing digital. Carregue os dados da sua conta de anúncios para que eu possa analisar o desempenho das suas campanhas. 
+                                <br><br>
+                                Você pode me fazer perguntas como:
+                                <ul>
+                                    <li>"Qual campanha tem o melhor ROAS?"</li>
+                                    <li>"Qual campanha gerou mais cadastros/leads?"</li>
+                                    <li>"Faça um resumo geral do desempenho da conta."</li>
+                                    <li>"Quais campanhas ativas estão com pior custo por resultado?"</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Chat suggestions chips -->
+                        <div class="chat-suggestions" id="chat-suggestions">
+                            <button class="chip" onclick="sendQuickPrompt('Qual campanha tem o melhor ROAS?')">Melhor ROAS</button>
+                            <button class="chip" onclick="sendQuickPrompt('Qual campanha tem mais conversas no WhatsApp?')">Mais WhatsApp</button>
+                            <button class="chip" onclick="sendQuickPrompt('Qual campanha gerou mais leads?')">Mais Leads</button>
+                            <button class="chip" onclick="sendQuickPrompt('Faça um resumo geral do desempenho da conta.')">Resumo Geral</button>
+                        </div>
+                    </div>
+
+                    <div class="chatbot-footer">
+                        <form id="chat-form" onsubmit="event.preventDefault(); submitChatMessage();">
+                            <div class="chat-input-wrapper">
+                                <input type="text" id="chat-input" placeholder="Faça uma pergunta sobre as campanhas..." autocomplete="off" disabled>
+                                <button type="submit" id="btn-chat-send" class="btn btn-primary btn-circle" disabled>
+                                    <i data-lucide="send"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Creative Preview Modal -->
+    <div id="creative-modal" class="modal">
+        <div class="modal-backdrop" onclick="closeCreativeModal()"></div>
+        <div class="modal-content card">
+            <div class="modal-header">
+                <h3>Visualização do Criativo</h3>
+                <button class="btn-close" onclick="closeCreativeModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="creative-grid">
+                    <div class="creative-preview-area">
+                        <img id="modal-creative-img" src="" alt="Preview do Criativo" style="display: none;">
+                        <div id="modal-creative-placeholder" class="creative-placeholder">
+                            <i data-lucide="image"></i>
+                            <p>Sem imagem disponível</p>
+                        </div>
+                    </div>
+                    <div class="creative-details-area">
+                        <div class="detail-item">
+                            <span class="detail-label">Nome do Anúncio</span>
+                            <div class="detail-value" id="modal-ad-name">---</div>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Título / Headline</span>
+                            <div class="detail-value" id="modal-creative-title">---</div>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Texto Principal (Copy)</span>
+                            <div class="detail-value" id="modal-creative-body">---</div>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">ID do Anúncio</span>
+                            <div class="detail-value text-mono" id="modal-ad-id">---</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main JavaScript Logic -->
+    <script src="app.js?v=5.0"></script>
+</body>
+</html>
