@@ -3,6 +3,8 @@ let state = {
     accessToken: '',
     adAccountId: '',
     datePreset: 'this_month',
+    customStartDate: '',
+    customEndDate: '',
     geminiKey: '',
     campaigns: [],
     filteredCampaigns: [],
@@ -31,12 +33,17 @@ function loadConfigFromStorage() {
     state.adAccountId = localStorage.getItem('meta_ad_account_id') || '';
     state.geminiKey = localStorage.getItem('gemini_api_key') || '';
     state.datePreset = localStorage.getItem('meta_date_preset') || 'this_month';
+    state.customStartDate = localStorage.getItem('meta_custom_start_date') || '';
+    state.customEndDate = localStorage.getItem('meta_custom_end_date') || '';
 
     document.getElementById('meta-token').value = state.accessToken;
     document.getElementById('ad-account-id').value = state.adAccountId;
     document.getElementById('gemini-key').value = state.geminiKey;
     document.getElementById('date-preset').value = state.datePreset;
+    document.getElementById('custom-start-date').value = state.customStartDate;
+    document.getElementById('custom-end-date').value = state.customEndDate;
 
+    toggleCustomDateFields();
     updateChatModeBadge();
 }
 
@@ -54,11 +61,15 @@ function saveConfigToStorage() {
 
     state.geminiKey = document.getElementById('gemini-key').value.trim();
     state.datePreset = document.getElementById('date-preset').value;
+    state.customStartDate = document.getElementById('custom-start-date').value;
+    state.customEndDate = document.getElementById('custom-end-date').value;
 
     localStorage.setItem('meta_access_token', state.accessToken);
     localStorage.setItem('meta_ad_account_id', state.adAccountId);
     localStorage.setItem('gemini_api_key', state.geminiKey);
     localStorage.setItem('meta_date_preset', state.datePreset);
+    localStorage.setItem('meta_custom_start_date', state.customStartDate);
+    localStorage.setItem('meta_custom_end_date', state.customEndDate);
 
     updateChatModeBadge();
 }
@@ -96,12 +107,62 @@ function setupEventListeners() {
     document.getElementById('btn-fetch').addEventListener('click', fetchData);
     document.getElementById('filter-active-only').addEventListener('change', filterAndRender);
     document.getElementById('btn-pdf').addEventListener('click', generatePDF);
+    document.getElementById('date-preset').addEventListener('change', toggleCustomDateFields);
     document.getElementById('chat-input').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             submitChatMessage();
         }
     });
+}
+
+function toggleCustomDateFields() {
+    const preset = document.getElementById('date-preset').value;
+    const container = document.getElementById('custom-date-container');
+    if (preset === 'custom') {
+        container.style.display = 'flex';
+    } else {
+        container.style.display = 'none';
+    }
+}
+
+function formatDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getMetaDateParams() {
+    const preset = state.datePreset;
+    const metaPresets = ['today', 'yesterday', 'this_month', 'last_month', 'last_30d', 'last_90d', 'maximum'];
+    
+    if (metaPresets.includes(preset)) {
+        return {
+            nested: `date_preset(${preset})`,
+            query: `date_preset=${preset}`
+        };
+    }
+    
+    let since = '';
+    let until = '';
+    
+    if (preset === 'last_3_months') {
+        const today = new Date();
+        until = formatDate(today);
+        const sinceDate = new Date();
+        sinceDate.setMonth(today.getMonth() - 3);
+        since = formatDate(sinceDate);
+    } else if (preset === 'custom') {
+        since = state.customStartDate;
+        until = state.customEndDate;
+    }
+    
+    const timeRangeStr = JSON.stringify({ since, until });
+    return {
+        nested: `time_range({"since":"${since}","until":"${until}"})`,
+        query: `time_range=${encodeURIComponent(timeRangeStr)}`
+    };
 }
 
 // --- Fetch Data from Meta Ads API ---
@@ -113,12 +174,21 @@ async function fetchData() {
         return;
     }
 
+    if (state.datePreset === 'custom') {
+        if (!state.customStartDate || !state.customEndDate) {
+            alert('Por favor, preencha as datas inicial e final para o período personalizado.');
+            return;
+        }
+    }
+
+    const dateParams = getMetaDateParams();
+
     setLoadingState(true);
     updateApiStatus('connecting', 'Conectando...');
 
     try {
         // 1. Fetch campaigns and insights (lightweight request)
-        const campaignFields = 'name,status,effective_status,daily_budget,lifetime_budget,objective,buying_type,insights.date_preset(' + state.datePreset + '){spend,actions,action_values,impressions,reach,clicks,inline_link_click_ctr}';
+        const campaignFields = 'name,status,effective_status,daily_budget,lifetime_budget,objective,buying_type,insights.' + dateParams.nested + '{spend,actions,action_values,impressions,reach,clicks,inline_link_click_ctr}';
         const campaignUrl = `https://graph.facebook.com/v20.0/${state.adAccountId}/campaigns?fields=${encodeURIComponent(campaignFields)}&limit=100&access_token=${encodeURIComponent(state.accessToken)}`;
 
         const campaignResponse = await fetch(campaignUrl);
@@ -131,7 +201,7 @@ async function fetchData() {
         // 2. Fetch ads and creatives separately with individual metrics (non-blocking request to prevent crashes if it fails)
         let adsData = [];
         try {
-            const adsFields = 'campaign{id,name},name,status,creative{id,name,thumbnail_url,image_url,body,title},insights.date_preset(' + state.datePreset + '){spend,actions,action_values,clicks}';
+            const adsFields = 'campaign{id,name},name,status,creative{id,name,thumbnail_url,image_url,body,title},insights.' + dateParams.nested + '{spend,actions,action_values,clicks}';
             const adsUrl = `https://graph.facebook.com/v20.0/${state.adAccountId}/ads?fields=${encodeURIComponent(adsFields)}&limit=250&access_token=${encodeURIComponent(state.accessToken)}`;
             
             const adsResponse = await fetch(adsUrl);
@@ -148,7 +218,7 @@ async function fetchData() {
         // 2.1 Fetch daily insights for the account breakdown (non-blocking request)
         let dailyInsightsData = [];
         try {
-            const dailyUrl = `https://graph.facebook.com/v20.0/${state.adAccountId}/insights?fields=spend,actions,action_values,clicks&time_increment=1&date_preset=${state.datePreset}&limit=100&access_token=${encodeURIComponent(state.accessToken)}`;
+            const dailyUrl = `https://graph.facebook.com/v20.0/${state.adAccountId}/insights?fields=spend,actions,action_values,clicks&time_increment=1&${dateParams.query}&limit=100&access_token=${encodeURIComponent(state.accessToken)}`;
             const dailyResponse = await fetch(dailyUrl);
             const dailyJson = await dailyResponse.json();
             if (dailyJson && dailyJson.data) {
@@ -664,7 +734,29 @@ function generatePDF() {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         doc.setTextColor(200, 200, 220);
-        doc.text(`Conta de Anúncios: ${state.adAccountId} | Período: ${state.datePreset.toUpperCase()}`, 14, 25);
+        
+        let periodLabel = state.datePreset.toUpperCase();
+        if (state.datePreset === 'custom') {
+            periodLabel = `PERSONALIZADO (${state.customStartDate.split('-').reverse().join('/')} A ${state.customEndDate.split('-').reverse().join('/')})`;
+        } else if (state.datePreset === 'last_3_months') {
+            periodLabel = 'ÚLTIMOS 3 MESES';
+        } else if (state.datePreset === 'last_month') {
+            periodLabel = 'MÊS PASSADO';
+        } else if (state.datePreset === 'this_month') {
+            periodLabel = 'ESTE MÊS';
+        } else if (state.datePreset === 'last_30d') {
+            periodLabel = 'ÚLTIMOS 30 DIAS';
+        } else if (state.datePreset === 'last_90d') {
+            periodLabel = 'ÚLTIMOS 90 DIAS';
+        } else if (state.datePreset === 'today') {
+            periodLabel = 'HOJE';
+        } else if (state.datePreset === 'yesterday') {
+            periodLabel = 'ONTEM';
+        } else if (state.datePreset === 'maximum') {
+            periodLabel = 'TODO O PERÍODO';
+        }
+
+        doc.text(`Conta de Anúncios: ${state.adAccountId} | Período: ${periodLabel}`, 14, 25);
         doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, 14, 30);
 
         // Calc Summary metrics

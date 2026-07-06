@@ -78,10 +78,30 @@
                                     <option value="today">Hoje</option>
                                     <option value="yesterday">Ontem</option>
                                     <option value="this_month" selected>Este Mês</option>
+                                    <option value="last_month">Mês Passado</option>
                                     <option value="last_30d">Últimos 30 Dias</option>
                                     <option value="last_90d">Últimos 90 Dias</option>
+                                    <option value="last_3_months">Últimos Três Meses</option>
                                     <option value="maximum">Todo o Período</option>
+                                    <option value="custom">Datas Personalizadas</option>
                                 </select>
+                            </div>
+                        </div>
+
+                        <div id="custom-date-container" style="display: none; flex-direction: column; gap: 12px; margin-top: -8px; margin-bottom: 20px;">
+                            <div class="input-group" style="margin-bottom: 0;">
+                                <label for="custom-start-date">Data Inicial</label>
+                                <div class="input-wrapper">
+                                    <i data-lucide="calendar" class="input-icon"></i>
+                                    <input type="date" id="custom-start-date" style="padding-left: 42px;">
+                                </div>
+                            </div>
+                            <div class="input-group" style="margin-bottom: 0;">
+                                <label for="custom-end-date">Data Final</label>
+                                <div class="input-wrapper">
+                                    <i data-lucide="calendar" class="input-icon"></i>
+                                    <input type="date" id="custom-end-date" style="padding-left: 42px;">
+                                </div>
                             </div>
                         </div>
 
