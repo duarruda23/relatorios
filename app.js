@@ -12,7 +12,8 @@ let state = {
     filteredAds: [],
     dailyInsights: [],
     loading: false,
-    accountInfo: null
+    accountInfo: null,
+    accountError: null
 };
 
 // --- Initialization ---
@@ -216,34 +217,71 @@ async function fetchData() {
     updateApiStatus('connecting', 'Conectando...');
 
     try {
-        // 0. Fetch Ad Account Details (Name, Status, Balance, Spend Cap, Currency, Funding Source)
+        // 0. Fetch Ad Account Details with fallback for restricted fields
         let accountData = null;
+        let accountErrorMsg = null;
+        
         try {
-            const accountFields = 'name,account_status,balance,amount_spent,spend_cap,account_currency,funding_source_details';
-            const accountUrl = `https://graph.facebook.com/v20.0/${state.adAccountId}?fields=${encodeURIComponent(accountFields)}&access_token=${encodeURIComponent(state.accessToken)}`;
-            const accountResponse = await fetch(accountUrl);
-            accountData = await accountResponse.json();
+            // First attempt: try to fetch all fields
+            const allFields = 'name,account_status,balance,amount_spent,spend_cap,account_currency,funding_source_details';
+            const url = `https://graph.facebook.com/v20.0/${state.adAccountId}?fields=${encodeURIComponent(allFields)}&access_token=${encodeURIComponent(state.accessToken)}`;
+            const response = await fetch(url);
+            accountData = await response.json();
             
+            // If it failed due to unsupported fields or permissions, try fallbacks
             if (accountData && accountData.error) {
-                console.warn('Erro ao carregar dados da conta de anúncios:', accountData.error);
+                console.warn('Tentativa 1 (todos os campos) falhou:', accountData.error.message);
+                accountErrorMsg = accountData.error.message;
+                
+                // Fallback 1: Remove funding_source_details, balance and spend_cap which are most likely restricted
+                console.log('Tentando fallback 1 (campos básicos + orçamento)...');
+                const fallbackFields1 = 'name,account_status,amount_spent,account_currency';
+                const urlFb1 = `https://graph.facebook.com/v20.0/${state.adAccountId}?fields=${encodeURIComponent(fallbackFields1)}&access_token=${encodeURIComponent(state.accessToken)}`;
+                const responseFb1 = await fetch(urlFb1);
+                const dataFb1 = await responseFb1.json();
+                
+                if (dataFb1 && !dataFb1.error) {
+                    accountData = dataFb1;
+                    accountErrorMsg = null;
+                } else if (dataFb1 && dataFb1.error) {
+                    console.warn('Fallback 1 falhou:', dataFb1.error.message);
+                    accountErrorMsg = dataFb1.error.message;
+                    
+                    // Fallback 2: Try only name and currency
+                    console.log('Tentando fallback 2 (apenas nome e moeda)...');
+                    const fallbackFields2 = 'name,account_currency';
+                    const urlFb2 = `https://graph.facebook.com/v20.0/${state.adAccountId}?fields=${encodeURIComponent(fallbackFields2)}&access_token=${encodeURIComponent(state.accessToken)}`;
+                    const responseFb2 = await fetch(urlFb2);
+                    const dataFb2 = await responseFb2.json();
+                    
+                    if (dataFb2 && !dataFb2.error) {
+                        accountData = dataFb2;
+                        accountErrorMsg = null;
+                    } else if (dataFb2 && dataFb2.error) {
+                        accountErrorMsg = dataFb2.error.message;
+                    }
+                }
             }
         } catch (accError) {
-            console.warn('Falha na requisição de dados da conta de anúncios:', accError);
+            console.warn('Erro de rede ao buscar dados da conta:', accError);
+            accountErrorMsg = accError.message;
         }
 
         if (accountData && !accountData.error) {
             state.accountInfo = {
                 name: accountData.name,
-                status: accountData.account_status,
-                balance: parseFloat(accountData.balance || 0) / 100,
-                amountSpent: parseFloat(accountData.amount_spent || 0) / 100,
-                spendCap: accountData.spend_cap ? parseFloat(accountData.spend_cap) / 100 : 0,
+                status: accountData.account_status !== undefined ? accountData.account_status : 1,
+                balance: accountData.balance !== undefined ? (parseFloat(accountData.balance || 0) / 100) : null,
+                amountSpent: accountData.amount_spent !== undefined ? (parseFloat(accountData.amount_spent || 0) / 100) : null,
+                spendCap: accountData.spend_cap !== undefined ? (parseFloat(accountData.spend_cap) / 100) : null,
                 currency: accountData.account_currency || 'BRL',
                 fundingSource: accountData.funding_source || 'Desconhecido',
                 fundingSourceDetails: accountData.funding_source_details || null
             };
+            state.accountError = null;
         } else {
             state.accountInfo = null;
+            state.accountError = accountErrorMsg || 'Erro desconhecido ao carregar dados de saldo.';
         }
 
         // 1. Fetch campaigns and insights (lightweight request)
@@ -1913,17 +1951,20 @@ function formatCurrency(value, currencyCode = 'BRL') {
 
 function renderBalance() {
     if (!state.accountInfo) {
-        document.getElementById('balance-account-name').innerText = 'Nenhum dado de saldo disponível';
-        document.getElementById('balance-account-id').innerText = 'Sincronize a conta para carregar';
+        document.getElementById('balance-account-name').innerText = 'Erro ao carregar saldo';
+        document.getElementById('balance-account-id').innerText = state.accountError || 'Sincronize a conta para carregar';
         
         const badge = document.getElementById('balance-status-badge');
         badge.className = 'status-pill status-paused';
-        badge.querySelector('.status-text').innerText = 'Desconectado';
+        badge.querySelector('.status-text').innerText = 'Indisponível';
+        badge.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+        badge.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+        badge.style.color = 'var(--danger)';
         
-        document.getElementById('kpi-balance-amount').innerText = 'R$ 0,00';
-        document.getElementById('kpi-balance-spent').innerText = 'R$ 0,00';
-        document.getElementById('kpi-balance-cap').innerText = 'R$ 0,00';
-        document.getElementById('kpi-balance-remaining').innerText = 'R$ 0,00';
+        document.getElementById('kpi-balance-amount').innerHTML = `<span style="font-size: 1.1rem; color: var(--text-muted);">Não Carregado</span>`;
+        document.getElementById('kpi-balance-spent').innerHTML = `<span style="font-size: 1.1rem; color: var(--text-muted);">Não Carregado</span>`;
+        document.getElementById('kpi-balance-cap').innerHTML = `<span style="font-size: 1.1rem; color: var(--text-muted);">Não Carregado</span>`;
+        document.getElementById('kpi-balance-remaining').innerHTML = `<span style="font-size: 1.1rem; color: var(--text-muted);">Não Carregado</span>`;
         
         document.getElementById('balance-progress-card').style.display = 'none';
         return;
@@ -1976,32 +2017,65 @@ function renderBalance() {
     }
 
     // 3. KPI Cards
-    document.getElementById('kpi-balance-amount').innerText = formatCurrency(info.balance, currency);
-    document.getElementById('kpi-balance-spent').innerText = formatCurrency(info.amountSpent, currency);
+    if (info.balance !== null) {
+        document.getElementById('kpi-balance-amount').innerText = formatCurrency(info.balance, currency);
+        if (info.fundingSource === 'PREPAY' || (info.fundingSourceDetails && info.fundingSourceDetails.type === 'PREPAY')) {
+            document.getElementById('kpi-balance-meta').innerText = 'Saldo disponível em carteira';
+        } else {
+            document.getElementById('kpi-balance-meta').innerText = 'Saldo devedor acumulado (A Pagar)';
+        }
+    } else {
+        document.getElementById('kpi-balance-amount').innerHTML = `<span style="font-size: 1.1rem; color: var(--text-muted);">Indisponível *</span>`;
+        document.getElementById('kpi-balance-meta').innerText = 'Sem permissão no token';
+    }
+
+    if (info.amountSpent !== null) {
+        document.getElementById('kpi-balance-spent').innerText = formatCurrency(info.amountSpent, currency);
+    } else {
+        document.getElementById('kpi-balance-spent').innerHTML = `<span style="font-size: 1.1rem; color: var(--text-muted);">Indisponível *</span>`;
+        document.getElementById('kpi-balance-spent-meta').innerText = 'Sem permissão no token';
+    }
 
     // Spend cap details
-    if (info.spendCap > 0) {
-        document.getElementById('kpi-balance-cap').innerText = formatCurrency(info.spendCap, currency);
-        
-        // Calculate remaining limit
-        const remaining = Math.max(0, info.spendCap - info.amountSpent);
-        document.getElementById('kpi-balance-remaining').innerText = formatCurrency(remaining, currency);
-        document.getElementById('kpi-balance-remaining-meta').innerText = 'Restante até o limite';
+    if (info.spendCap !== null) {
+        if (info.spendCap > 0) {
+            document.getElementById('kpi-balance-cap').innerText = formatCurrency(info.spendCap, currency);
+            document.getElementById('kpi-balance-cap-meta').innerText = 'Limite configurado na conta';
+            
+            // Calculate remaining limit
+            if (info.amountSpent !== null) {
+                const remaining = Math.max(0, info.spendCap - info.amountSpent);
+                document.getElementById('kpi-balance-remaining').innerText = formatCurrency(remaining, currency);
+                document.getElementById('kpi-balance-remaining-meta').innerText = 'Restante até o limite';
 
-        // Show Progress Bar
-        const progressCard = document.getElementById('balance-progress-card');
-        progressCard.style.display = 'block';
-        
-        const percent = Math.min(100, (info.amountSpent / info.spendCap) * 100);
-        document.getElementById('balance-progress-percent').innerText = `${percent.toFixed(1)}%`;
-        document.getElementById('balance-progress-fill').style.width = `${percent}%`;
-        document.getElementById('balance-progress-text').innerText = `${formatCurrency(info.amountSpent, currency)} gastos do limite de ${formatCurrency(info.spendCap, currency)}`;
+                // Show Progress Bar
+                const progressCard = document.getElementById('balance-progress-card');
+                progressCard.style.display = 'block';
+                
+                const percent = Math.min(100, (info.amountSpent / info.spendCap) * 100);
+                document.getElementById('balance-progress-percent').innerText = `${percent.toFixed(1)}%`;
+                document.getElementById('balance-progress-fill').style.width = `${percent}%`;
+                document.getElementById('balance-progress-text').innerText = `${formatCurrency(info.amountSpent, currency)} gastos do limite de ${formatCurrency(info.spendCap, currency)}`;
+            } else {
+                document.getElementById('kpi-balance-remaining').innerText = '---';
+                document.getElementById('kpi-balance-remaining-meta').innerText = 'Gasto acumulado indisponível';
+                document.getElementById('balance-progress-card').style.display = 'none';
+            }
+        } else {
+            document.getElementById('kpi-balance-cap').innerText = 'Sem Limite';
+            document.getElementById('kpi-balance-cap-meta').innerText = 'Sem limite de gastos máximo';
+            
+            document.getElementById('kpi-balance-remaining').innerText = 'Ilimitado';
+            document.getElementById('kpi-balance-remaining-meta').innerText = 'Usa forma de pagamento padrão';
+            
+            document.getElementById('balance-progress-card').style.display = 'none';
+        }
     } else {
-        document.getElementById('kpi-balance-cap').innerText = 'Sem Limite';
-        document.getElementById('kpi-balance-cap-meta').innerText = 'Sem limite de gastos máximo';
+        document.getElementById('kpi-balance-cap').innerHTML = `<span style="font-size: 1.1rem; color: var(--text-muted);">Indisponível *</span>`;
+        document.getElementById('kpi-balance-cap-meta').innerText = 'Sem permissão no token';
         
-        document.getElementById('kpi-balance-remaining').innerText = 'Ilimitado';
-        document.getElementById('kpi-balance-remaining-meta').innerText = 'Usa forma de pagamento padrão';
+        document.getElementById('kpi-balance-remaining').innerHTML = `<span style="font-size: 1.1rem; color: var(--text-muted);">Indisponível *</span>`;
+        document.getElementById('kpi-balance-remaining-meta').innerText = 'Sem permissão no token';
         
         document.getElementById('balance-progress-card').style.display = 'none';
     }
@@ -2019,15 +2093,15 @@ function renderBalance() {
         if (details.type) {
             fundingTypeStr = `${details.type} (${info.fundingSource || 'Automático'})`;
         }
-    } else if (info.fundingSource) {
+    } else if (info.fundingSource && info.fundingSource !== 'Desconhecido') {
         payMethodStr = info.fundingSource;
+    } else {
+        payMethodStr = 'Não disponível (Sem permissão)';
+        fundingTypeStr = 'Não disponível (Sem permissão)';
     }
     
     if (info.fundingSource === 'PREPAY' || (info.fundingSourceDetails && info.fundingSourceDetails.type === 'PREPAY')) {
         fundingTypeStr = 'Pré-pago / Manual';
-        document.getElementById('kpi-balance-meta').innerText = 'Saldo disponível em carteira';
-    } else {
-        document.getElementById('kpi-balance-meta').innerText = 'Saldo devedor acumulado (A Pagar)';
     }
 
     document.getElementById('detail-payment-method').innerText = payMethodStr;
@@ -2038,6 +2112,8 @@ function renderBalance() {
     if (info.fundingSourceDetails && info.fundingSourceDetails.coupons && info.fundingSourceDetails.coupons.length > 0) {
         const couponList = info.fundingSourceDetails.coupons.map(c => `${formatCurrency(c.amount / 100, c.currency)} (Expira: ${c.expiry_date || 'N/A'})`);
         couponsStr = couponList.join(', ');
+    } else if (!info.fundingSourceDetails) {
+        couponsStr = 'Não disponível (Sem permissão)';
     }
     document.getElementById('detail-coupons').innerText = couponsStr;
 
