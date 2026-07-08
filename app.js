@@ -223,7 +223,7 @@ async function fetchData() {
         
         try {
             // First attempt: try to fetch all fields
-            const allFields = 'name,account_status,balance,amount_spent,spend_cap,account_currency,funding_source_details';
+            const allFields = 'name,account_status,balance,amount_spent,spend_cap,currency,funding_source_details';
             const url = `https://graph.facebook.com/v20.0/${state.adAccountId}?fields=${encodeURIComponent(allFields)}&access_token=${encodeURIComponent(state.accessToken)}`;
             const response = await fetch(url);
             accountData = await response.json();
@@ -235,7 +235,7 @@ async function fetchData() {
                 
                 // Fallback 1: Remove funding_source_details, balance and spend_cap which are most likely restricted
                 console.log('Tentando fallback 1 (campos básicos + orçamento)...');
-                const fallbackFields1 = 'name,account_status,amount_spent,account_currency';
+                const fallbackFields1 = 'name,account_status,amount_spent,currency';
                 const urlFb1 = `https://graph.facebook.com/v20.0/${state.adAccountId}?fields=${encodeURIComponent(fallbackFields1)}&access_token=${encodeURIComponent(state.accessToken)}`;
                 const responseFb1 = await fetch(urlFb1);
                 const dataFb1 = await responseFb1.json();
@@ -249,7 +249,7 @@ async function fetchData() {
                     
                     // Fallback 2: Try only name and currency
                     console.log('Tentando fallback 2 (apenas nome e moeda)...');
-                    const fallbackFields2 = 'name,account_currency';
+                    const fallbackFields2 = 'name,currency';
                     const urlFb2 = `https://graph.facebook.com/v20.0/${state.adAccountId}?fields=${encodeURIComponent(fallbackFields2)}&access_token=${encodeURIComponent(state.accessToken)}`;
                     const responseFb2 = await fetch(urlFb2);
                     const dataFb2 = await responseFb2.json();
@@ -274,7 +274,7 @@ async function fetchData() {
                 balance: accountData.balance !== undefined ? (parseFloat(accountData.balance || 0) / 100) : null,
                 amountSpent: accountData.amount_spent !== undefined ? (parseFloat(accountData.amount_spent || 0) / 100) : null,
                 spendCap: accountData.spend_cap !== undefined ? (parseFloat(accountData.spend_cap) / 100) : null,
-                currency: accountData.account_currency || 'BRL',
+                currency: accountData.currency || 'BRL',
                 fundingSource: accountData.funding_source || 'Desconhecido',
                 fundingSourceDetails: accountData.funding_source_details || null
             };
