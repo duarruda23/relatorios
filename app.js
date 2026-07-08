@@ -11,7 +11,8 @@ let state = {
     ads: [],
     filteredAds: [],
     dailyInsights: [],
-    loading: false
+    loading: false,
+    accountInfo: null
 };
 
 // --- Initialization ---
@@ -114,6 +115,34 @@ function setupEventListeners() {
             submitChatMessage();
         }
     });
+
+    // Listen to tab clicks
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.getAttribute('data-tab');
+            switchTab(tabId);
+        });
+    });
+}
+
+function switchTab(tabId) {
+    // Update active state on buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabId) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // Update active state on contents
+    document.querySelectorAll('.tab-content').forEach(content => {
+        if (content.id === `tab-content-${tabId}`) {
+            content.classList.add('active');
+        } else {
+            content.classList.remove('active');
+        }
+    });
 }
 
 function toggleCustomDateFields() {
@@ -187,6 +216,36 @@ async function fetchData() {
     updateApiStatus('connecting', 'Conectando...');
 
     try {
+        // 0. Fetch Ad Account Details (Name, Status, Balance, Spend Cap, Currency, Funding Source)
+        let accountData = null;
+        try {
+            const accountFields = 'name,account_status,balance,amount_spent,spend_cap,account_currency,funding_source_details';
+            const accountUrl = `https://graph.facebook.com/v20.0/${state.adAccountId}?fields=${encodeURIComponent(accountFields)}&access_token=${encodeURIComponent(state.accessToken)}`;
+            const accountResponse = await fetch(accountUrl);
+            accountData = await accountResponse.json();
+            
+            if (accountData && accountData.error) {
+                console.warn('Erro ao carregar dados da conta de anúncios:', accountData.error);
+            }
+        } catch (accError) {
+            console.warn('Falha na requisição de dados da conta de anúncios:', accError);
+        }
+
+        if (accountData && !accountData.error) {
+            state.accountInfo = {
+                name: accountData.name,
+                status: accountData.account_status,
+                balance: parseFloat(accountData.balance || 0) / 100,
+                amountSpent: parseFloat(accountData.amount_spent || 0) / 100,
+                spendCap: accountData.spend_cap ? parseFloat(accountData.spend_cap) / 100 : 0,
+                currency: accountData.account_currency || 'BRL',
+                fundingSource: accountData.funding_source || 'Desconhecido',
+                fundingSourceDetails: accountData.funding_source_details || null
+            };
+        } else {
+            state.accountInfo = null;
+        }
+
         // 1. Fetch campaigns and insights (lightweight request)
         const campaignFields = 'name,status,effective_status,daily_budget,lifetime_budget,objective,buying_type,insights.' + dateParams.nested + '{spend,actions,action_values,impressions,reach,clicks,inline_link_click_ctr}';
         const campaignUrl = `https://graph.facebook.com/v20.0/${state.adAccountId}/campaigns?fields=${encodeURIComponent(campaignFields)}&limit=100&access_token=${encodeURIComponent(state.accessToken)}`;
@@ -526,6 +585,7 @@ function filterAndRender() {
     renderKPIs();
     renderTable();
     filterAndRenderAds(); // Render creatives section
+    renderBalance(); // Render account balance section
     
     // Enable PDF download if campaigns exist
     document.getElementById('btn-pdf').disabled = state.filteredCampaigns.length === 0;
@@ -1385,11 +1445,24 @@ async function handleGeminiResponse(query) {
         cpa: c.primaryResult.cost
     }));
 
+    const balanceData = state.accountInfo ? {
+        nome_conta: state.accountInfo.name,
+        status_conta: state.accountInfo.status === 1 ? 'ACTIVE' : (state.accountInfo.status === 2 ? 'DISABLED' : (state.accountInfo.status === 3 ? 'UNSETTLED' : state.accountInfo.status)),
+        saldo_atual_a_pagar: state.accountInfo.balance,
+        gasto_total_acumulado: state.accountInfo.amountSpent,
+        limite_gastos_cap: state.accountInfo.spendCap > 0 ? state.accountInfo.spendCap : 'Sem limite configurado',
+        moeda: state.accountInfo.currency,
+        forma_pagamento: state.accountInfo.fundingSourceDetails ? state.accountInfo.fundingSourceDetails.display_string : state.accountInfo.fundingSource
+    } : null;
+
     const systemPrompt = `Você é um Analista de Tráfego Pago Sênior e Consultor de Marketing Digital especializado em Meta Ads.
     Você está analisando os dados da conta de anúncios act_${state.adAccountId} no período "${state.datePreset}".
-    O usuário fez uma pergunta. Analise as campanhas fornecidas no dataset e responda em português do Brasil de forma concisa, comercial e consultiva.
+    O usuário fez uma pergunta. Analise as campanhas e as informações financeiras de saldo fornecidas no dataset e responda em português do Brasil de forma concisa, comercial e consultiva.
     Use formatação de texto limpa (negrito para valores, quebras de linha e tópicos). 
-    Quando cabível, calcule métricas como CPA, CPL, ROAS médio, ou aponte otimizações (como pausar campanhas com ROAS ruim ou custo muito alto).
+    Quando cabível, calcule métricas como CPA, CPL, ROAS médio, ou responda sobre o saldo da conta de anúncios e limites de gastos.
+    
+    Dados de Saldo/Cobrança da Conta:
+    ${balanceData ? JSON.stringify(balanceData, null, 2) : 'Não carregados'}
     
     Dados de Campanhas Atuais:
     ${JSON.stringify(dataset, null, 2)}`;
@@ -1432,6 +1505,45 @@ async function handleGeminiResponse(query) {
 function handleLocalResponse(query) {
     const lower = query.toLowerCase();
     
+    // 0. Account Balance / Billing queries
+    if (lower.includes('saldo') || lower.includes('limite') || lower.includes('pagamento') || lower.includes('cobrança') || lower.includes('cobranca') || lower.includes('pre-pago') || lower.includes('pre pago') || lower.includes('pós-pago') || lower.includes('pos pago')) {
+        if (!state.accountInfo) {
+            return "Ainda não carreguei os dados financeiros da conta de anúncios. Por favor, certifique-se de preencher o Token e o ID e sincronizar os dados clicando em **Sincronizar Dados** primeiro.";
+        }
+        const info = state.accountInfo;
+        const currency = info.currency;
+        const balanceStr = formatCurrency(info.balance, currency);
+        const spentStr = formatCurrency(info.amountSpent, currency);
+        const capStr = info.spendCap > 0 ? formatCurrency(info.spendCap, currency) : "Sem limite configurado";
+        
+        let statusStr = "Ativa";
+        if (info.status === 2) statusStr = "Desativada";
+        else if (info.status === 3) statusStr = "Pendente de Pagamento";
+        else if (info.status === 7) statusStr = "Em Análise de Risco";
+        else if (info.status === 8) statusStr = "Aguardando Liquidação";
+        else if (info.status === 9) statusStr = "Período de Graça";
+        
+        let fundingStr = info.fundingSource || 'Automático';
+        if (info.fundingSourceDetails && info.fundingSourceDetails.display_string) {
+            fundingStr = `${info.fundingSourceDetails.display_string} (${fundingStr})`;
+        }
+
+        let remainingStr = "Sem limite";
+        if (info.spendCap > 0) {
+            remainingStr = formatCurrency(Math.max(0, info.spendCap - info.amountSpent), currency);
+        }
+
+        return `Aqui estão as informações de **Saldo e Cobrança** obtidas da conta **"${info.name || 'Meta Ads'}"**:
+        
+        *   **Status da Conta de Anúncios:** **${statusStr}**
+        *   **Saldo Atual (A Pagar / Em Carteira):** **${balanceStr}**
+        *   **Total Gasto Acumulado (Vitalício):** ${spentStr}
+        *   **Limite Máximo (Spend Cap):** ${capStr}
+        *   **Saldo Restante do Limite:** **${remainingStr}**
+        *   **Forma de Pagamento Principal:** ${fundingStr}
+        *   **Moeda da Conta:** ${currency}`;
+    }
+
     if (state.filteredCampaigns.length === 0) {
         return "Não encontrei nenhuma campanha ativa/carregada para analisar. Por favor, conecte sua conta do Meta Ads e sincronize os dados primeiro!";
     }
@@ -1785,3 +1897,150 @@ function createMetricBox(label, value) {
 
 // Bind to window for global inline action triggers
 window.filterAndRenderAds = filterAndRenderAds;
+window.switchTab = switchTab;
+
+// --- Balance Rendering Helpers ---
+function formatCurrency(value, currencyCode = 'BRL') {
+    const locale = currencyCode === 'BRL' ? 'pt-BR' : 'en-US';
+    const options = { style: 'currency', currency: currencyCode };
+    try {
+        return parseFloat(value || 0).toLocaleString(locale, options);
+    } catch (e) {
+        const symbol = currencyCode === 'BRL' ? 'R$' : (currencyCode === 'USD' ? '$' : currencyCode);
+        return `${symbol} ${parseFloat(value || 0).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+}
+
+function renderBalance() {
+    if (!state.accountInfo) {
+        document.getElementById('balance-account-name').innerText = 'Nenhum dado de saldo disponível';
+        document.getElementById('balance-account-id').innerText = 'Sincronize a conta para carregar';
+        
+        const badge = document.getElementById('balance-status-badge');
+        badge.className = 'status-pill status-paused';
+        badge.querySelector('.status-text').innerText = 'Desconectado';
+        
+        document.getElementById('kpi-balance-amount').innerText = 'R$ 0,00';
+        document.getElementById('kpi-balance-spent').innerText = 'R$ 0,00';
+        document.getElementById('kpi-balance-cap').innerText = 'R$ 0,00';
+        document.getElementById('kpi-balance-remaining').innerText = 'R$ 0,00';
+        
+        document.getElementById('balance-progress-card').style.display = 'none';
+        return;
+    }
+
+    const info = state.accountInfo;
+    const currency = info.currency;
+
+    // 1. Header Info
+    document.getElementById('balance-account-name').innerText = info.name || 'Conta de Anúncios';
+    document.getElementById('balance-account-id').innerText = `ID da Conta: act_${state.adAccountId.replace('act_', '')}`;
+
+    // 2. Status Badge
+    const badge = document.getElementById('balance-status-badge');
+    const badgeText = badge.querySelector('.status-text');
+    
+    // Status codes: 1=ACTIVE, 2=DISABLED, 3=UNSETTLED, 7=PENDING_RISK_REVIEW, 8=PENDING_SETTLEMENT, 9=IN_GRACE_PERIOD, 100=PENDING_CLOSURE, 101=CLOSED
+    if (info.status === 1) {
+        badge.className = 'status-pill status-active';
+        badgeText.innerText = 'Ativa';
+        badge.removeAttribute('style');
+    } else if (info.status === 2) {
+        badge.className = 'status-pill status-paused';
+        badge.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+        badge.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+        badge.style.color = 'var(--danger)';
+        badgeText.innerText = 'Desativada';
+    } else if (info.status === 3) {
+        badge.className = 'status-pill status-paused';
+        badge.style.backgroundColor = 'rgba(245, 158, 11, 0.15)';
+        badge.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+        badge.style.color = 'var(--warning)';
+        badgeText.innerText = 'Pendente de Pagamento';
+    } else if (info.status === 7) {
+        badge.className = 'status-pill status-paused';
+        badgeText.innerText = 'Em Análise de Risco';
+        badge.removeAttribute('style');
+    } else if (info.status === 8) {
+        badge.className = 'status-pill status-paused';
+        badgeText.innerText = 'Aguardando Liquidação';
+        badge.removeAttribute('style');
+    } else if (info.status === 9) {
+        badge.className = 'status-pill status-paused';
+        badgeText.innerText = 'Período de Graça';
+        badge.removeAttribute('style');
+    } else {
+        badge.className = 'status-pill status-paused';
+        badgeText.innerText = `Status: ${info.status}`;
+        badge.removeAttribute('style');
+    }
+
+    // 3. KPI Cards
+    document.getElementById('kpi-balance-amount').innerText = formatCurrency(info.balance, currency);
+    document.getElementById('kpi-balance-spent').innerText = formatCurrency(info.amountSpent, currency);
+
+    // Spend cap details
+    if (info.spendCap > 0) {
+        document.getElementById('kpi-balance-cap').innerText = formatCurrency(info.spendCap, currency);
+        
+        // Calculate remaining limit
+        const remaining = Math.max(0, info.spendCap - info.amountSpent);
+        document.getElementById('kpi-balance-remaining').innerText = formatCurrency(remaining, currency);
+        document.getElementById('kpi-balance-remaining-meta').innerText = 'Restante até o limite';
+
+        // Show Progress Bar
+        const progressCard = document.getElementById('balance-progress-card');
+        progressCard.style.display = 'block';
+        
+        const percent = Math.min(100, (info.amountSpent / info.spendCap) * 100);
+        document.getElementById('balance-progress-percent').innerText = `${percent.toFixed(1)}%`;
+        document.getElementById('balance-progress-fill').style.width = `${percent}%`;
+        document.getElementById('balance-progress-text').innerText = `${formatCurrency(info.amountSpent, currency)} gastos do limite de ${formatCurrency(info.spendCap, currency)}`;
+    } else {
+        document.getElementById('kpi-balance-cap').innerText = 'Sem Limite';
+        document.getElementById('kpi-balance-cap-meta').innerText = 'Sem limite de gastos máximo';
+        
+        document.getElementById('kpi-balance-remaining').innerText = 'Ilimitado';
+        document.getElementById('kpi-balance-remaining-meta').innerText = 'Usa forma de pagamento padrão';
+        
+        document.getElementById('balance-progress-card').style.display = 'none';
+    }
+
+    // 4. Details Section
+    document.getElementById('detail-currency').innerText = `${currency} (${currency === 'BRL' ? 'Real Brasileiro' : 'Dólar Americano'})`;
+
+    // Payment method details
+    let payMethodStr = 'Desconhecido';
+    let fundingTypeStr = 'Pós-pago / Automático';
+    
+    if (info.fundingSourceDetails) {
+        const details = info.fundingSourceDetails;
+        payMethodStr = details.display_string || payMethodStr;
+        if (details.type) {
+            fundingTypeStr = `${details.type} (${info.fundingSource || 'Automático'})`;
+        }
+    } else if (info.fundingSource) {
+        payMethodStr = info.fundingSource;
+    }
+    
+    if (info.fundingSource === 'PREPAY' || (info.fundingSourceDetails && info.fundingSourceDetails.type === 'PREPAY')) {
+        fundingTypeStr = 'Pré-pago / Manual';
+        document.getElementById('kpi-balance-meta').innerText = 'Saldo disponível em carteira';
+    } else {
+        document.getElementById('kpi-balance-meta').innerText = 'Saldo devedor acumulado (A Pagar)';
+    }
+
+    document.getElementById('detail-payment-method').innerText = payMethodStr;
+    document.getElementById('detail-funding-type').innerText = fundingTypeStr;
+
+    // Active Coupons
+    let couponsStr = 'Nenhum';
+    if (info.fundingSourceDetails && info.fundingSourceDetails.coupons && info.fundingSourceDetails.coupons.length > 0) {
+        const couponList = info.fundingSourceDetails.coupons.map(c => `${formatCurrency(c.amount / 100, c.currency)} (Expira: ${c.expiry_date || 'N/A'})`);
+        couponsStr = couponList.join(', ');
+    }
+    document.getElementById('detail-coupons').innerText = couponsStr;
+
+    // Refresh Lucide Icons inside the balance tab
+    initializeLucide();
+}

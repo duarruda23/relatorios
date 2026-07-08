@@ -128,8 +128,22 @@
             <!-- Main Panel: Dashboard metrics & Campaigns Table -->
             <section class="main-panel">
                 
-                <!-- Summary KPI Cards -->
-                <div class="kpi-grid">
+                <!-- Tabs Navigation -->
+                <div class="tabs-nav">
+                    <button class="tab-btn active" data-tab="dashboard">
+                        <i data-lucide="layout-dashboard"></i>
+                        <span>Dashboard de Campanhas</span>
+                    </button>
+                    <button class="tab-btn" data-tab="balance">
+                        <i data-lucide="wallet"></i>
+                        <span>Saldo da Conta</span>
+                    </button>
+                </div>
+
+                <!-- Tab Content: Dashboard -->
+                <div id="tab-content-dashboard" class="tab-content active">
+                    <!-- Summary KPI Cards -->
+                    <div class="kpi-grid">
                     <div class="kpi-card card">
                         <div class="kpi-header">
                             <span class="kpi-title">Gasto Total</span>
@@ -238,6 +252,7 @@
                             </tbody>
                         </table>
                 </div>
+                </div> <!-- End of .campaigns-container -->
 
                 <!-- Creatives Performance Section -->
                 <div class="creatives-section card" style="margin-top: 24px;">
@@ -338,6 +353,120 @@
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+                </div> <!-- End of #tab-content-dashboard -->
+
+                <!-- Tab Content: Account Balance -->
+                <div id="tab-content-balance" class="tab-content">
+                    <div class="balance-container">
+                        
+                        <!-- Account Summary Banner -->
+                        <div class="balance-summary-card card" style="margin-bottom: 24px;">
+                            <div class="balance-summary-header" style="display: flex; justify-content: space-between; align-items: center; padding: 20px;">
+                                <div class="account-profile" style="display: flex; align-items: center; gap: 16px;">
+                                    <div class="account-avatar" style="width: 48px; height: 48px; border-radius: 12px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--card-border-hover); display: flex; align-items: center; justify-content: center; color: var(--primary-light);">
+                                        <i data-lucide="building-2"></i>
+                                    </div>
+                                    <div>
+                                        <h3 id="balance-account-name" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 4px;">Sincronize os Dados</h3>
+                                        <p class="subtitle" id="balance-account-id">ID da Conta: ---</p>
+                                    </div>
+                                </div>
+                                <div id="balance-status-badge" class="status-pill status-paused">
+                                    <span class="status-dot"></span>
+                                    <span class="status-text">Desconectado</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Financial KPI Grid -->
+                        <div class="kpi-grid financial-kpi-grid">
+                            <div class="kpi-card card">
+                                <div class="kpi-header">
+                                    <span class="kpi-title">Saldo Atual (A Pagar)</span>
+                                    <div class="kpi-icon-wrapper color-spend">
+                                        <i data-lucide="credit-card"></i>
+                                    </div>
+                                </div>
+                                <div class="kpi-value" id="kpi-balance-amount">R$ 0,00</div>
+                                <div class="kpi-footer" id="kpi-balance-meta">Saldo devedor acumulado</div>
+                            </div>
+
+                            <div class="kpi-card card">
+                                <div class="kpi-header">
+                                    <span class="kpi-title">Total Gasto (Período)</span>
+                                    <div class="kpi-icon-wrapper color-whatsapp">
+                                        <i data-lucide="trending-up"></i>
+                                    </div>
+                                </div>
+                                <div class="kpi-value" id="kpi-balance-spent">R$ 0,00</div>
+                                <div class="kpi-footer" id="kpi-balance-spent-meta">Total gasto de anúncios</div>
+                            </div>
+
+                            <div class="kpi-card card">
+                                <div class="kpi-header">
+                                    <span class="kpi-title">Limite de Gastos (Cap)</span>
+                                    <div class="kpi-icon-wrapper color-leads">
+                                        <i data-lucide="sliders"></i>
+                                    </div>
+                                </div>
+                                <div class="kpi-value" id="kpi-balance-cap">R$ 0,00</div>
+                                <div class="kpi-footer" id="kpi-balance-cap-meta">Limite configurado na conta</div>
+                            </div>
+
+                            <div class="kpi-card card">
+                                <div class="kpi-header">
+                                    <span class="kpi-title">Limite Restante</span>
+                                    <div class="kpi-icon-wrapper color-purchases">
+                                        <i data-lucide="shield-check"></i>
+                                    </div>
+                                </div>
+                                <div class="kpi-value" id="kpi-balance-remaining">R$ 0,00</div>
+                                <div class="kpi-footer" id="kpi-balance-remaining-meta">Saldo disponível para anúncios</div>
+                            </div>
+                        </div>
+
+                        <!-- Progress Bar Card (for Spend Cap) -->
+                        <div class="card progress-card" id="balance-progress-card" style="display: none; margin-bottom: 24px; padding: 20px;">
+                            <div class="progress-info" style="display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: 500; margin-bottom: 8px;">
+                                <span>Consumo do Limite de Gastos</span>
+                                <span id="balance-progress-percent">0%</span>
+                            </div>
+                            <div class="progress-bar-container" style="width: 100%; height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; margin-bottom: 8px; border: 1px solid var(--card-border);">
+                                <div class="progress-bar-fill" id="balance-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%); border-radius: 4px; transition: width 0.3s ease;"></div>
+                            </div>
+                            <small class="helper-text" id="balance-progress-text">R$ 0,00 gastos de R$ 0,00</small>
+                        </div>
+
+                        <!-- Payment & Funding Details Section -->
+                        <div class="billing-details card">
+                            <div class="card-header">
+                                <i data-lucide="receipt"></i>
+                                <h2>Informações de Cobrança e Pagamento</h2>
+                            </div>
+                            <div class="card-body" style="padding: 20px;">
+                                <div class="details-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px;">
+                                    <div class="detail-row" style="display: flex; flex-direction: column; gap: 6px; padding: 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--card-border);">
+                                        <span class="detail-label" style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Moeda da Conta</span>
+                                        <span class="detail-val" id="detail-currency" style="font-size: 1.1rem; font-weight: 600;">---</span>
+                                    </div>
+                                    <div class="detail-row" style="display: flex; flex-direction: column; gap: 6px; padding: 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--card-border);">
+                                        <span class="detail-label" style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Forma de Pagamento Principal</span>
+                                        <span class="detail-val" id="detail-payment-method" style="font-size: 1.1rem; font-weight: 600;">---</span>
+                                    </div>
+                                    <div class="detail-row" style="display: flex; flex-direction: column; gap: 6px; padding: 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--card-border);">
+                                        <span class="detail-label" style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Tipo de Financiamento</span>
+                                        <span class="detail-val" id="detail-funding-type" style="font-size: 1.1rem; font-weight: 600;">---</span>
+                                    </div>
+                                    <div class="detail-row" style="display: flex; flex-direction: column; gap: 6px; padding: 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--card-border);">
+                                        <span class="detail-label" style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Cupons Ativos</span>
+                                        <span class="detail-val" id="detail-coupons" style="font-size: 1.1rem; font-weight: 600;">---</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </section>
